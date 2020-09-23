@@ -1,9 +1,8 @@
 const { promisify } = require("util");
 const jwt = require("jsonwebtoken");
+const User = require("../models/userModel");
+const AppError = require("../utils/appError");
 
-const data = {
-  users: [],
-};
 // To generate token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -12,32 +11,40 @@ const generateToken = (id) => {
 };
 
 // To sign up a new user and create token
-exports.signupUser = (req, res) => {
+exports.signupUser = async (req, res, next) => {
   try {
-    const { body } = req;
-    body._id = data.users.length + 1;
-    data.users.push(body);
-    const token = generateToken(data.users[0]._id);
+    const newUser = await User.create(req.body);
+    const token = generateToken(newUser._id);
     res.status(201).json({
       status: "success",
       token,
-      data,
+      data: {
+        user: newUser,
+      },
     });
-  } catch (err) {
-    console.log(err);
+  } catch {
+    next(new AppError("Unable to signup at the moment", 401));
   }
 };
 
 // To delete user
-exports.deleteUser = (req, res) => {
-  const { userId } = req.params;
-  const newUsers = data.users.filter((user) => user._id !== +userId);
-  data.users = [...newUsers];
+exports.deleteUser = async (req, res, next) => {
+  try {
+    const deletedUser = await User.findByIdAndDelete(req.params.userId);
 
-  res.status(200).json({
-    status: "success",
-    data,
-  });
+    if (!deletedUser) {
+      return next(new AppError("Cannot find a user with this user id!", 401));
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        user: deletedUser,
+      },
+    });
+  } catch {
+    next(new AppError("Unable to delete user at the moment", 401));
+  }
 };
 
 /**
@@ -59,6 +66,7 @@ exports.authenticateUser = async (req, res, next) => {
   ) {
     token = req.headers.authorization.split(" ")[1];
   }
+
   if (!token) {
     res.status(401).json({
       status: "unauthorized",
@@ -68,17 +76,12 @@ exports.authenticateUser = async (req, res, next) => {
     const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
 
     // 3. Check if user still exists
-    const currentUser = data.users.find((user) => {
-      return user._id === decoded.id;
-    });
+    const currentUser = await User.findById(decoded.id);
 
     if (currentUser) {
       next();
     } else {
-      res.status(401).json({
-        status: "unauthorized",
-        message: "User doesn't exist! Unauthorized access",
-      });
+      next(new AppError("User does not exist! Unauthorized access", 401));
     }
   }
 };
