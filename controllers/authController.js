@@ -27,6 +27,38 @@ exports.signupUser = async (req, res, next) => {
   }
 };
 
+// To login user
+exports.loginUser = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+
+    // 1. Check if email and password is supplied
+    if (!email || !password) {
+      return next(new AppError("Please provide email and password", 401));
+    }
+
+    // 2. Check if user exists
+    const user = await User.findOne({ email }).select("+password");
+
+    // 3. Check if password is correct
+    if (user && !(await user.verifyPassword(password, user.password))) {
+      return next(new AppError("Incorrect email or password", 401));
+    }
+
+    // 4. If everything is ok, let the user login and generate token
+    const token = generateToken(user._id);
+    res.status(200).json({
+      status: "success",
+      token,
+      data: {
+        user,
+      },
+    });
+  } catch {
+    next(new AppError("Unable to login at the moment", 401));
+  }
+};
+
 // To delete user
 exports.deleteUser = async (req, res, next) => {
   try {
